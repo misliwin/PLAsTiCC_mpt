@@ -1,4 +1,5 @@
 import warnings
+
 warnings.filterwarnings('ignore')
 import numpy as np
 from matplotlib import pyplot as plt
@@ -7,6 +8,7 @@ from matplotlib import colors as mcolors
 import pandas as pd
 import gc
 import plotly.offline as py
+
 py.init_notebook_mode(connected=True)
 %matplotlib inline
 
@@ -33,12 +35,12 @@ dataset.describe()
 
 # extract each passband
 for key, val in {'u': 0, 'g': 1, 'r': 2, 'i': 3, 'z': 4, 'y': 5}.items():
-    dataset[key] = (dataset['passband']-val).apply(np.bool).apply(np.logical_not).apply(np.int)
+    dataset[key] = (dataset['passband'] - val).apply(np.bool).apply(np.logical_not).apply(np.int)
 dataset.head()
 
 # convert mjd to unix time
-unix_time = (dataset['mjd']-40587)*86400
-#convert unix time to readable format
+unix_time = (dataset['mjd'] - 40587) * 86400
+# convert unix time to readable format
 time_ = pd.to_datetime(unix_time, unit='ms')
 
 # information extraction from modified julian date
@@ -64,21 +66,21 @@ dataset['flux_by_flux_ratio_sq'] = dataset['flux'] * dataset['flux_ratio_sq']
 aggs = {
     'mjd': ['min', 'max', 'size'],
     'passband': ['min', 'max', 'mean', 'median', 'std'],
-    'flux': ['min', 'max', 'mean', 'median', 'std','skew'],
-    'flux_err': ['min', 'max', 'mean', 'median', 'std','skew'],
+    'flux': ['min', 'max', 'mean', 'median', 'std', 'skew'],
+    'flux_err': ['min', 'max', 'mean', 'median', 'std', 'skew'],
     'detected': ['mean'],
-    'flux_ratio_sq':['sum','skew'],
-    'flux_by_flux_ratio_sq':['sum','skew'],
+    'flux_ratio_sq': ['sum', 'skew'],
+    'flux_by_flux_ratio_sq': ['sum', 'skew'],
     'r': ['sum'],
     'g': ['sum'],
     'i': ['sum'],
     'u': ['sum'],
     'z': ['sum'],
     'y': ['sum'],
-#     'month': ['min', 'max', 'median'],
-#     'day': ['min', 'max', 'median'],
-#     'week': ['min', 'max', 'median'],
-#     'dayofweek': ['min', 'max', 'median'],
+    #     'month': ['min', 'max', 'median'],
+    #     'day': ['min', 'max', 'median'],
+    #     'week': ['min', 'max', 'median'],
+    #     'dayofweek': ['min', 'max', 'median'],
     'hour': ['min', 'max', 'median'],
     'minute': ['min', 'max', 'median'],
     'second': ['min', 'max', 'median'],
@@ -162,7 +164,7 @@ meta_dataset.head()
 
 meta_dataset.isnull().sum()
 
-print("distmod missing data in %: {}".format(meta_dataset.isnull().sum()[-4]*100/meta_dataset.shape[0]))
+print("distmod missing data in %: {}".format(meta_dataset.isnull().sum()[-4] * 100 / meta_dataset.shape[0]))
 # put 0 instead of NaN in distmod (in that way we can store distance for objects out of our galaxy)
 meta_dataset = meta_dataset.fillna(0)
 meta_dataset.head()
@@ -175,7 +177,7 @@ n_samples = meta_test.shape[0]
 missing_values = meta_test.isnull().sum()
 
 for val, ind in zip(missing_values, missing_values.index):
-    print("{} has {:2.2f}%  missing values.".format(ind, val*100/n_samples))
+    print("{} has {:2.2f}%  missing values.".format(ind, val * 100 / n_samples))
 # hostgal_specz - missing 96%+ samples -> insufficient data for analysis and ML algorithms, need to be dropped
 %xdel meta_test
 
@@ -184,5 +186,92 @@ meta_dataset = meta_dataset.drop(['hostgal_specz'], axis=1)
 meta_dataset.head()
 
 # training_dataset = pd.merge(dataset, meta_dataset) # without additional computed features
-training_dataset = pd.merge(agg_train.reset_index(), meta_dataset) # with additional computed features
+training_dataset = pd.merge(agg_train.reset_index(), meta_dataset)  # with additional computed features
 training_dataset.head()
+
+# !!!!!!!!!!!!!!!!!!!!!!!
+# data analysis
+
+fig = plt.figure(figsize=(20, 15))
+ax = fig.add_subplot(111, projection='mollweide')
+data = meta_dataset[['ra', 'decl']]
+data['target'] = meta_dataset['target']
+category = list()
+colors = plt.get_cmap('viridis').colors[::19]
+for cat in set(meta_dataset['target']):
+    category.append(data[data['target'].str.contains(cat)])
+classes = list(set(meta_dataset['target']))
+for cat, color, class_ in zip(category, colors, classes):
+    ax.scatter(cat['ra'], cat['decl'], c=color, label=class_, edgecolors='none', s=100, alpha=0.7)
+ax.legend()
+ax.grid(True)
+plt.title('Sky map of training dataset')
+fig.savefig('sky_train_plot.pdf')
+
+colors = plt.get_cmap('magma').colors[::9]
+data = meta_dataset[['target', 'in_our_galaxy']]
+data['in_our_galaxy'] = data['in_our_galaxy']
+data = data.groupby('target').sum()
+fig = plt.figure(figsize=(15, 8))
+ax = fig.add_subplot(111)
+ax.bar(data.index, data['in_our_galaxy'], color=colors, alpha=0.9)
+ax.set_xlabel('Object classes')
+ax.set_ylabel('In our galaxy')
+plt.title('The number of particular objects classified in our galaxy.')
+for i, rect in enumerate(data['in_our_galaxy']):
+    ax.text(i, rect + 10, rect, ha='center')
+
+colors = plt.get_cmap('magma').colors[::14]
+fig = plt.figure(figsize=(15, 8))
+ax = fig.add_subplot(111)
+
+data = meta_dataset[['target', 'ddf']]
+data = data.groupby('target').sum()
+p1 = ax.bar(np.arange(len(data.index)) + 0.2, data['ddf'], color='blue', alpha=0.65, width=0.4)
+for i, rect in enumerate(data['ddf']):
+    ax.text(i, rect + 10, rect, ha='left')
+
+data_2 = meta_dataset[['target', 'ddf']]
+data_2['wfd'] = np.logical_xor(data_2['ddf'], 1).astype(int)
+data_2 = data_2.groupby('target').sum()
+p2 = ax.bar(np.arange(len(data_2.index)) - 0.2, data_2['wfd'], color='red', alpha=0.65, width=0.4)
+for i, rect in enumerate(data_2['wfd']):
+    ax.text(i, rect + 10, rect, ha='right')
+
+ax.set_xticklabels(data.index)
+ax.set_xticks(np.arange(len(data_2.index)))
+ax.set_xlabel('Object classes')
+ax.set_ylabel('Number of observed objects')
+plt.title('Comparison of WFD and DDF objects detection number.')
+ax.legend((p1, p2), ['DDF', 'WFD'])
+
+fig = plt.figure(figsize=(15, 8))
+ax = fig.add_subplot(111)
+
+data = training_dataset[['target', 'g_sum', 'r_sum', 'z_sum', 'u_sum', 'i_sum', 'y_sum']]
+data = data.groupby('target').sum()
+x = np.arange(len(data.index))
+for i in range(len(data.index)):
+    ax.axvline(x=i + 0.4, linestyle='-.', color='grey')
+
+p1 = ax.scatter(x - 0.45, data['u_sum'], color='blue', alpha=0.65)
+p2 = ax.scatter(x - 0.3, data['g_sum'], color='green', alpha=0.65)
+p3 = ax.scatter(x - 0.15, data['r_sum'], color='red', alpha=0.65)
+p4 = ax.scatter(x, data['i_sum'], color='orange', alpha=0.65)
+p5 = ax.scatter(x + 0.15, data['z_sum'], color='black', alpha=0.65)
+p6 = ax.scatter(x + 0.3, data['y_sum'], color='yellow', alpha=0.65)
+
+ax.set_xticklabels(data.index)
+ax.set_xticks(np.arange(len(data.index)))
+ax.set_xlabel('Object classes')
+ax.set_ylabel('Number of observed objects')
+plt.title('The number of object detected in particular passband')
+ax.legend((p1, p2, p3, p4, p5, p6), ['u_sum', 'g_sum', 'r_sum', 'i_sum', 'z_sum', 'y_sum'])
+
+# histograms per class
+targets = set(training_dataset['target'])
+for target in targets:
+    fig = plt.figure(figsize=(20, 20))
+    ax = fig.add_subplot(111)
+    training_dataset[training_dataset['target'].str.contains(target)].hist(bins=100, ax=ax)
+    fig.suptitle('{} histograms'.format(target), fontsize=16)
